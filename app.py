@@ -364,8 +364,14 @@ with tab2:
     bd = bdf.copy() if has_bud else None
     if has_bud and sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
 
-    # 月ラベル
-    month_labels = [m[5:]+'月' for m in months]
+    # 月フィルター（複数選択）
+    month_labels_all = [m[5:]+'月' for m in months]
+    sel_months_filter = st.multiselect(
+        '月を絞り込む（複数選択可）', month_labels_all, default=month_labels_all, key='tab2_months'
+    )
+    # 選択された月のみ使用
+    filtered_months = [m for m, ml in zip(months, month_labels_all) if ml in sel_months_filter]
+    month_labels = [m[5:]+'月' for m in filtered_months]
     all_cols = ['項目'] + month_labels + ['累計']
 
     def get_act(type_, acc=None, m=None):
@@ -396,9 +402,9 @@ with tab2:
         rows = []
 
         def add(label, act_fn, bud_fn, indent=False, is_total=False, is_section=False):
-            act_m = [act_fn(m) for m in months]
+            act_m = [act_fn(m) for m in filtered_months]
             act_t = sum(act_m)
-            bud_m = [bud_fn(m) for m in months]
+            bud_m = [bud_fn(m) for m in filtered_months]
             bud_t = sum(bud_m)
             vals_act = [fmt(v) for v in act_m] + [fmt(act_t)]
             vals_bud = [fmt(v) for v in bud_m] + [fmt(bud_t)]
@@ -444,34 +450,64 @@ with tab2:
 
     # ダイアログ定義（明細ポップアップ）
     @st.dialog('🔍 仕訳明細', width='large')
-    def show_detail_dialog(acc, sel_months, dept_data):
-        # 月フィルター
-        month_opts = ['全期間'] + months
-        sel_m_dialog = st.selectbox('月を絞り込む', month_opts, key='dialog_month')
+    def show_detail_dialog(acc, target_month, dept_data):
+        title = f'{acc}　{target_month if target_month != "累計" else "累計（全期間）"}'
+        st.write(f'**{title}**')
         dd = dept_data[dept_data['account']==acc].copy()
-        if sel_m_dialog != '全期間':
-            dd = dd[dd['month']==sel_m_dialog]
+        if target_month != '累計':
+            # 月ラベルから月コードに変換
+            target_m = next((m for m, ml in zip(months, month_labels_all) if ml == target_month), None)
+            if target_m:
+                dd = dd[dd['month']==target_m]
         dd = dd[['date','month','dept','partner','note','amount']].sort_values('date')
         dd.columns = ['日付','月','部門','取引先','摘要','金額']
+        total = dd['金額'].sum() if len(dd) > 0 else 0
         dd['金額'] = dd['金額'].apply(fmt)
-        total = dept_data[dept_data['account']==acc]['amount'].sum()
-        if sel_m_dialog != '全期間':
-            total = dept_data[(dept_data['account']==acc)&(dept_data['month']==sel_m_dialog)]['amount'].sum()
         st.caption(f'{len(dd)}件　合計：{fmt(total)}')
         st.dataframe(dd, use_container_width=True, hide_index=True)
 
-    # 行選択で明細ダイアログ表示
-    st.write('##### 費用科目の行をクリックすると明細ウィンドウが開きます')
-    sel_pl = st.dataframe(act_df, use_container_width=True, hide_index=True,
-                          on_select='rerun', selection_mode='single-row')
+    # セッション状態で選択した科目・月を管理
+    if 'dialog_acc' not in st.session_state:
+        st.session_state.dialog_acc = None
+        st.session_state.dialog_month = None
 
-    if sel_pl and sel_pl.selection and sel_pl.selection.rows:
-        idx = sel_pl.selection.rows[0]
-        selected_label = final_rows[idx]['項目'].strip()
-        pr = next((r for r in pl_rows if r['項目'].strip() == selected_label or
-                   selected_label == r['項目'].strip()), None)
-        if pr and not pr['is_section'] and not pr['is_total']:
-            show_detail_dialog(selected_label, months, d)
+    # 損益計算書テーブルをボタン形式で表示
+    st.write('##### 金額をクリックすると明細ウィンドウが開きます')
+    header_cols = st.columns([3] + [1]*len(month_labels) + [1.2])
+    header_cols[0].write('**項目**')
+    for i, ml in enumerate(month_labels):
+        header_cols[i+1].write(f'**{ml}**')
+    header_cols[-1].write('**累計**')
+
+    for row_idx, r in enumerate(pl_rows):
+        if r['is_section']:
+            st.markdown(f"**━━ {r['項目']} ━━**")
+            continue
+        cols = st.columns([3] + [1]*len(month_labels) + [1.2])
+        label = r['項目']
+        is_clickable = not r['is_total']
+        cols[0].write(label)
+        for i, (ml, act_v) in enumerate(zip(month_labels, r['vals_act'])):
+            if is_clickable and act_v != '¥0':
+                if cols[i+1].button(act_v, key=f'btn_{row_idx}_{i}', use_container_width=True):
+                    st.session_state.dialog_acc = label.strip()
+                    st.session_state.dialog_month = ml
+            else:
+                cols[i+1].write(act_v)
+        # 累計
+        cum_v = r['vals_act'][-1]
+        if is_clickable and cum_v != '¥0':
+            if cols[-1].button(cum_v, key=f'btn_{row_idx}_cum', use_container_width=True):
+                st.session_state.dialog_acc = label.strip()
+                st.session_state.dialog_month = '累計'
+        else:
+            cols[-1].write(cum_v)
+
+    # ダイアログ表示
+    if st.session_state.dialog_acc:
+        show_detail_dialog(st.session_state.dialog_acc, st.session_state.dialog_month, d)
+        st.session_state.dialog_acc = None
+        st.session_state.dialog_month = None
 
     # 予実比較テーブル
     if has_bud:
