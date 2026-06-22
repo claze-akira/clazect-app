@@ -344,9 +344,10 @@ with tab1:
         act_nums = exp_df.set_index('勘定科目')['実績'].to_dict()
         exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
         exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
-        exp_df['差額'] = exp_df.apply(
-            lambda r: diff_str(float(act_nums.get(r['勘定科目'], 0)), float(r['予算'])), axis=1)
-        exp_df['予算'] = exp_df['予算'].apply(fmt)
+        exp_df["実績_v"] = exp_df["勘定科目"].map(act_nums).fillna(0).astype(float)
+        exp_df["差額_d"] = exp_df["実績_v"] - exp_df["予算"]
+        exp_df["差額"] = exp_df.apply(lambda r: ("▲ " if r["差額_d"]>=0 else "▼ ") + fmt(abs(r["差額_d"])) if r["予算"]!=0 else "", axis=1)
+        exp_df = exp_df.drop(columns=["実績_v","差額_d"])
 
     exp_df['実績'] = exp_df['実績'].apply(fmt)
 
