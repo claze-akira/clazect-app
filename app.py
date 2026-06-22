@@ -244,10 +244,9 @@ def load_companies_cached():
     except:
         return []
 
-@st.cache_data(ttl=60)
 def load_data(company):
     try:
-        sh = get_spreadsheet()
+        sh = get_gsheet_client().open_by_key(SPREADSHEET_ID)
         df = load_from_sheet(sh, f'{company}_実績データ')
         if df is not None and not df.empty:
             df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
@@ -255,10 +254,9 @@ def load_data(company):
     except: pass
     return None
 
-@st.cache_data(ttl=60)
 def load_budget(company):
     try:
-        sh = get_spreadsheet()
+        sh = get_gsheet_client().open_by_key(SPREADSHEET_ID)
         bdf = load_from_sheet(sh, f'{company}_予算データ')
         if bdf is not None and not bdf.empty:
             bdf['amount'] = pd.to_numeric(bdf['amount'], errors='coerce').fillna(0)
