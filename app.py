@@ -330,7 +330,7 @@ with tab1:
     exp_df.columns = ['勘定科目', '実績']
     exp_df = exp_df[exp_df['実績']>0].sort_values('実績', ascending=False)
 
-    # 実績を数値で確保してから計算
+    # 実績を数値で確保
     exp_df['実績'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
     exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
 
@@ -340,12 +340,13 @@ with tab1:
         if sel_month != '累計': bd = bd[bd['month']==sel_month]
         bexp = bd[bd['type']=='費用'].groupby('account')['amount'].sum().reset_index()
         bexp.columns = ['勘定科目','予算']
-        exp_df['実績_num'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
+        # mergeの前に実績の数値を保存
+        act_nums = exp_df.set_index('勘定科目')['実績'].to_dict()
         exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
         exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
-        exp_df['差額'] = exp_df.apply(lambda r: diff_str(float(r['実績_num']), float(r['予算'])), axis=1)
+        exp_df['差額'] = exp_df.apply(
+            lambda r: diff_str(float(act_nums.get(r['勘定科目'], 0)), float(r['予算'])), axis=1)
         exp_df['予算'] = exp_df['予算'].apply(fmt)
-        exp_df = exp_df.drop(columns=['実績_num'])
 
     exp_df['実績'] = exp_df['実績'].apply(fmt)
 
