@@ -428,25 +428,6 @@ with tab2:
 
     pl_rows = build_pl_rows()
 
-    # 実績テーブル
-    st.write('**実績**')
-    act_data = [{'項目': r['項目'], **{month_labels[i]: r['vals_act'][i] for i in range(len(months))}, '累計': r['vals_act'][-1]}
-                for r in pl_rows if not r['is_section']]
-    act_df = pd.DataFrame(act_data)
-
-    # セクション行を挿入
-    final_rows = []
-    for r in pl_rows:
-        if r['is_section']:
-            final_rows.append({col: ('━━ '+r['項目']+' ━━' if col=='項目' else '') for col in all_cols})
-        else:
-            row_d = {'項目': r['項目']}
-            for i, ml in enumerate(month_labels):
-                row_d[ml] = r['vals_act'][i]
-            row_d['累計'] = r['vals_act'][-1]
-            final_rows.append(row_d)
-
-    act_df = pd.DataFrame(final_rows)
 
     # ダイアログ定義（明細ポップアップ）
     @st.dialog('🔍 仕訳明細', width='large')
