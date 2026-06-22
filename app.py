@@ -570,8 +570,7 @@ with tab_main:
 
 with tab_settings:
     st.subheader('⚙️ 会社管理')
-    sh_settings = get_spreadsheet()
-    current_companies = load_companies(sh_settings)
+    current_companies = list(load_companies_cached())
 
     st.write('**登録済み会社一覧**')
     if current_companies:
@@ -580,7 +579,7 @@ with tab_settings:
             col_name.write(c)
             if col_del.button('削除', key=f'del_{i}'):
                 current_companies.remove(c)
-                save_companies(sh_settings, current_companies)
+                save_companies(get_spreadsheet(), current_companies)
                 st.cache_data.clear()
                 st.rerun()
     else:
@@ -592,7 +591,7 @@ with tab_settings:
     if st.button('追加', type='primary'):
         if new_company and new_company not in current_companies:
             current_companies.append(new_company)
-            save_companies(sh_settings, current_companies)
+            save_companies(get_spreadsheet(), current_companies)
             st.cache_data.clear()
             st.success(f'✅ {new_company} を追加しました')
             st.rerun()
