@@ -332,9 +332,12 @@ with tab1:
         bexp = bd[bd['type']=='費用'].groupby('account')['amount'].sum().reset_index()
         bexp.columns = ['勘定科目','予算']
         exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
-        exp_df['差額'] = exp_df.apply(lambda r: diff_str(r['実績'], r['予算']), axis=1)
-        exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
+        exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
+        exp_df['実績_num'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
+        exp_df['差額'] = exp_df.apply(lambda r: diff_str(float(r['実績_num']), float(r['予算'])), axis=1)
+        exp_df['構成比'] = exp_df['実績_num'].apply(lambda x: pct(x, agg['expense']))
         exp_df['予算'] = exp_df['予算'].apply(fmt)
+        exp_df = exp_df.drop(columns=['実績_num'])
     else:
         exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
 
