@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import openpyxl
+import io
 
 # ===== 設定 =====
 SPREADSHEET_ID = '1h06FfSGadEqViz77rReSlbIs_QIryOE1JloWqjR2GCU'
@@ -552,6 +553,148 @@ with tab_main:
                     row_d['累計'] = f"{r['vals_act'][-1]} / {r['vals_bud'][-1]} {r['vals_diff'][-1]}"
                     comp_rows.append(row_d)
                 st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+
+            # ===== Excel/PDFダウンロード =====
+            st.divider()
+            st.write('**📥 ダウンロード**')
+
+            def build_excel(pl_rows, month_labels, filtered_months, has_bud, sel_company, sel_dept):
+                import openpyxl
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                from openpyxl.utils import get_column_letter
+                import io
+
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = '損益計算書'
+
+                # スタイル
+                HDR_FILL = PatternFill('solid', start_color='1A1A1A')
+                HDR_FONT = Font(name='Arial', bold=True, color='FFFFFF', size=10)
+                SECT_FILL = PatternFill('solid', start_color='EBEBEB')
+                SECT_FONT = Font(name='Arial', bold=True, color='444444', size=10)
+                TOT_FILL = PatternFill('solid', start_color='F0F0EE')
+                TOT_FONT = Font(name='Arial', bold=True, size=10)
+                LABEL_FONT = Font(name='Arial', size=10)
+                NEG_FONT = Font(name='Arial', size=10, color='A32D2D')
+                THIN = Side(style='thin', color='E0E0E0')
+                BORDER = Border(bottom=THIN)
+
+                # タイトル
+                ws['A1'] = f'{sel_company}　損益計算書'
+                ws['A1'].font = Font(name='Arial', bold=True, size=12)
+                period = '・'.join(month_labels) if month_labels else '累計'
+                ws['A2'] = f'対象期間：{period}　部門：{sel_dept}'
+                ws['A2'].font = Font(name='Arial', size=10, color='666666')
+                ws.row_dimensions[1].height = 22
+                ws.row_dimensions[2].height = 16
+
+                # ヘッダー行
+                header = ['項目'] + month_labels + ['累計']
+                if has_bud:
+                    header += ['予算（累計）', '差額']
+                for col, h in enumerate(header, 1):
+                    c = ws.cell(row=3, column=col)
+                    c.value = h
+                    c.font = HDR_FONT
+                    c.fill = HDR_FILL
+                    c.alignment = Alignment(horizontal='right' if col > 1 else 'left', vertical='center')
+                ws.row_dimensions[3].height = 20
+
+                # データ行
+                row = 4
+                for r in pl_rows:
+                    if r['is_section']:
+                        ws.cell(row=row, column=1).value = '◆ ' + r['項目']
+                        ws.cell(row=row, column=1).font = SECT_FONT
+                        ws.cell(row=row, column=1).fill = SECT_FILL
+                        for col in range(2, len(header)+1):
+                            ws.cell(row=row, column=col).fill = SECT_FILL
+                        ws.row_dimensions[row].height = 18
+                        row += 1
+                        continue
+
+                    fill = TOT_FILL if r['is_total'] else None
+                    font = TOT_FONT if r['is_total'] else LABEL_FONT
+
+                    ws.cell(row=row, column=1).value = r['項目']
+                    ws.cell(row=row, column=1).font = font
+                    if fill: ws.cell(row=row, column=1).fill = fill
+
+                    # 月別実績（数値で入れる）
+                    for i, ml in enumerate(month_labels):
+                        val_str = r['vals_act'][i].replace('¥','').replace(',','').replace('-','')
+                        try:
+                            val = int(r['vals_act'][i].replace('¥','').replace(',','').replace('▲','').replace('▼',''))
+                            if '-' in r['vals_act'][i] or r['vals_act'][i].startswith('▼'): val = -val
+                        except: val = 0
+                        c = ws.cell(row=row, column=i+2)
+                        c.value = val
+                        c.number_format = '#,##0'
+                        c.font = NEG_FONT if val < 0 else font
+                        c.alignment = Alignment(horizontal='right')
+                        if fill: c.fill = fill
+
+                    # 累計
+                    try:
+                        cum = int(r['vals_act'][-1].replace('¥','').replace(',',''))
+                        if '-' in r['vals_act'][-1]: cum = -cum
+                    except: cum = 0
+                    cum_col = len(month_labels) + 2
+                    c = ws.cell(row=row, column=cum_col)
+                    c.value = cum
+                    c.number_format = '#,##0'
+                    c.font = NEG_FONT if cum < 0 else font
+                    c.alignment = Alignment(horizontal='right')
+                    if fill: c.fill = fill
+
+                    # 予算・差額
+                    if has_bud:
+                        try:
+                            bud_v = int(r['vals_bud'][-1].replace('¥','').replace(',',''))
+                            if '-' in r['vals_bud'][-1]: bud_v = -bud_v
+                        except: bud_v = 0
+                        try:
+                            diff_v = cum - bud_v
+                        except: diff_v = 0
+                        c_bud = ws.cell(row=row, column=cum_col+1)
+                        c_bud.value = bud_v
+                        c_bud.number_format = '#,##0'
+                        c_bud.alignment = Alignment(horizontal='right')
+                        if fill: c_bud.fill = fill
+                        c_diff = ws.cell(row=row, column=cum_col+2)
+                        c_diff.value = diff_v
+                        c_diff.number_format = '#,##0'
+                        c_diff.font = NEG_FONT if diff_v < 0 else Font(name='Arial', size=10, color='3B6D11')
+                        c_diff.alignment = Alignment(horizontal='right')
+                        if fill: c_diff.fill = fill
+
+                    ws.row_dimensions[row].height = 18
+                    row += 1
+
+                # 列幅
+                ws.column_dimensions['A'].width = 24
+                for col in range(2, len(header)+1):
+                    ws.column_dimensions[get_column_letter(col)].width = 14
+
+                buf = io.BytesIO()
+                wb.save(buf)
+                buf.seek(0)
+                return buf.getvalue()
+
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                excel_data = build_excel(pl_rows, month_labels, filtered_months, has_bud, sel_company, sel_dept)
+                fname = f'{sel_company}_損益計算書_{"-".join(month_labels)}.xlsx'
+                st.download_button(
+                    label='📊 Excelでダウンロード',
+                    data=excel_data,
+                    file_name=fname,
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True
+                )
+            with col_dl2:
+                st.info('PDFはExcelを開いて「ファイル→印刷→PDFで保存」でできます', icon='💡')
 
         with tab3:
             d = df.copy()
