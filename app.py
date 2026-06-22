@@ -326,9 +326,6 @@ with st.sidebar:
     st.divider()
     st.caption('データはGoogle Sheetsに自動保存されます')
 
-if not sel_company:
-    st.stop()
-
 # ===== データ読込 =====
 df  = load_data(sel_company)
 bdf = load_budget(sel_company)
@@ -338,236 +335,238 @@ has_bud = bdf is not None and not bdf.empty
 tab_main, tab_settings = st.tabs(['📊 分析', '⚙️ 設定'])
 
 with tab_main:
-    if df is None or df.empty:
+    if not sel_company:
+        st.info('⚙️ 設定タブから会社を登録してください')
+    elif df is None or df.empty:
         st.info('👈 サイドバーから仕訳帳CSVを取り込んでください')
-        st.stop()
+    else:
 
-    months = sorted(df['month'].unique().tolist())
-    depts  = sorted(df[df['dept'] != '']['dept'].unique().tolist())
+        months = sorted(df['month'].unique().tolist())
+        depts  = sorted(df[df['dept'] != '']['dept'].unique().tolist())
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        month_options = months + ['累計']
-        sel_month = st.selectbox('月', month_options, index=len(month_options)-2)
-    with col2:
-        dept_options = ['全体'] + depts
-        sel_dept = st.selectbox('部門', dept_options)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            month_options = months + ['累計']
+            sel_month = st.selectbox('月', month_options, index=len(month_options)-2)
+        with col2:
+            dept_options = ['全体'] + depts
+            sel_dept = st.selectbox('部門', dept_options)
 
-    st.divider()
+        st.divider()
 
-    agg  = aggregate(df, sel_dept, sel_month)
-    bagg = agg_bud(bdf, sel_dept, sel_month)
+        agg  = aggregate(df, sel_dept, sel_month)
+        bagg = agg_bud(bdf, sel_dept, sel_month)
 
-    c1, c2, c3, c4 = st.columns(4)
-    def metric_card(col, label, act, bud):
-        with col:
-            delta = None
-            if has_bud and bud != 0:
-                d = act - bud
-                delta = f"予算比 {'+' if d>=0 else ''}{fmt(d)}"
-            st.metric(label, fmt(act), delta)
+        c1, c2, c3, c4 = st.columns(4)
+        def metric_card(col, label, act, bud):
+            with col:
+                delta = None
+                if has_bud and bud != 0:
+                    d = act - bud
+                    delta = f"予算比 {'+' if d>=0 else ''}{fmt(d)}"
+                st.metric(label, fmt(act), delta)
 
-    metric_card(c1, '売上高', agg['sales'], bagg['sales'])
-    metric_card(c2, '売上総利益', agg['gross'], bagg['gross'])
-    metric_card(c3, '費用合計', agg['expense'], bagg['expense'])
-    metric_card(c4, '営業利益', agg['op'], bagg['op'])
+        metric_card(c1, '売上高', agg['sales'], bagg['sales'])
+        metric_card(c2, '売上総利益', agg['gross'], bagg['gross'])
+        metric_card(c3, '費用合計', agg['expense'], bagg['expense'])
+        metric_card(c4, '営業利益', agg['op'], bagg['op'])
 
-    st.divider()
+        st.divider()
 
-    tab1, tab2, tab3 = st.tabs(['📊 費用内訳', '📅 月次詳細（損益計算書）', '📈 推移グラフ'])
+        tab1, tab2, tab3 = st.tabs(['📊 費用内訳', '📅 月次詳細（損益計算書）', '📈 推移グラフ'])
 
-    with tab1:
-        d = df.copy()
-        if sel_dept != '全体': d = d[d['dept']==sel_dept]
-        if sel_month != '累計': d = d[d['month']==sel_month]
+        with tab1:
+            d = df.copy()
+            if sel_dept != '全体': d = d[d['dept']==sel_dept]
+            if sel_month != '累計': d = d[d['month']==sel_month]
 
-        exp_df = d[d['type']=='費用'].groupby('account')['amount'].sum().reset_index()
-        exp_df.columns = ['勘定科目', '実績']
-        exp_df['実績'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
-        exp_df = exp_df[exp_df['実績']>0].sort_values('実績', ascending=False)
-        exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
+            exp_df = d[d['type']=='費用'].groupby('account')['amount'].sum().reset_index()
+            exp_df.columns = ['勘定科目', '実績']
+            exp_df['実績'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
+            exp_df = exp_df[exp_df['実績']>0].sort_values('実績', ascending=False)
+            exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
 
-        if has_bud:
-            bd = bdf.copy()
-            if sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
-            if sel_month != '累計': bd = bd[bd['month']==sel_month]
-            bexp = bd[bd['type']=='費用'].groupby('account')['amount'].sum().reset_index()
-            bexp.columns = ['勘定科目','予算']
-            act_nums = exp_df.set_index('勘定科目')['実績'].to_dict()
-            exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
-            exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
-            exp_df['差額'] = ["▲ "+fmt(abs(dv)) if b!=0 and dv>=0 else "▼ "+fmt(abs(dv)) if b!=0 else ""
-                              for dv,b in zip(
-                                  [float(act_nums.get(k,0))-float(bv) for k,bv in zip(exp_df['勘定科目'],exp_df['予算'])],
-                                  exp_df['予算'])]
-            exp_df['予算'] = exp_df['予算'].apply(fmt)
-
-        exp_df['実績'] = exp_df['実績'].apply(fmt)
-
-        st.write('##### 科目をクリックすると明細を表示します')
-        sel_row = st.dataframe(exp_df, use_container_width=True, hide_index=True,
-                               on_select='rerun', selection_mode='single-row')
-
-        if sel_row and sel_row.selection and sel_row.selection.rows:
-            selected_acc = exp_df.iloc[sel_row.selection.rows[0]]['勘定科目']
-            st.subheader(f'🔍 明細：{selected_acc}')
-            det = d[d['account']==selected_acc][['date','dept','partner','note','amount']].copy()
-            det = det.sort_values('date')
-            det.columns = ['日付','部門','取引先','摘要','金額']
-            det['金額'] = det['金額'].apply(fmt)
-            st.dataframe(det, use_container_width=True, hide_index=True)
-            st.caption(f'{len(det)}件')
-
-    with tab2:
-        d = df.copy()
-        if sel_dept != '全体': d = d[d['dept']==sel_dept]
-        bd = bdf.copy() if has_bud else None
-        if has_bud and sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
-
-        month_labels_all = [m[5:]+'月' for m in months]
-        sel_months_filter = st.multiselect('月を絞り込む（複数選択可）', month_labels_all,
-                                           default=month_labels_all, key='tab2_months')
-        filtered_months = [m for m, ml in zip(months, month_labels_all) if ml in sel_months_filter]
-        month_labels = [m[5:]+'月' for m in filtered_months]
-
-        def get_act(type_, acc=None, m=None):
-            dd = d[d['month']==m] if m else d
-            dd = dd[dd['type']==type_]
-            if acc: dd = dd[dd['account']==acc]
-            return dd['amount'].sum()
-
-        def get_bud(type_, acc=None, m=None):
-            if not has_bud: return 0
-            bb = bd[bd['month']==m] if m else bd
-            bb = bb[bb['type']==type_]
-            if acc: bb = bb[bb['account']==acc]
-            return bb['amount'].sum()
-
-        exp_accs = sorted(set(
-            d[d['type']=='費用']['account'].unique().tolist() +
-            (bd[bd['type']=='費用']['account'].unique().tolist() if has_bud else [])
-        ))
-
-        def build_pl_rows():
-            rows = []
-            def add(label, act_fn, bud_fn, indent=False, is_total=False, is_section=False):
-                act_m = [act_fn(m) for m in filtered_months]
-                act_t = sum(act_m)
-                bud_m = [bud_fn(m) for m in filtered_months]
-                bud_t = sum(bud_m)
-                vals_act = [fmt(v) for v in act_m] + [fmt(act_t)]
-                vals_bud = [fmt(v) for v in bud_m] + [fmt(bud_t)]
-                vals_diff = ["▲ "+fmt(abs(a-b)) if b!=0 and a-b>=0 else "▼ "+fmt(abs(a-b)) if b!=0 else ""
-                             for a,b in zip(act_m+[act_t], bud_m+[bud_t])]
-                rows.append({'項目': ('　' if indent else '') + label,
-                             'vals_act': vals_act, 'vals_bud': vals_bud, 'vals_diff': vals_diff,
-                             'is_section': is_section, 'is_total': is_total})
-            add('売上高', lambda m: get_act('売上高',m=m), lambda m: get_bud('売上高',m=m))
-            add('売上原価（仕入高）', lambda m: get_act('仕入高',m=m), lambda m: get_bud('仕入高',m=m))
-            add('売上総利益', lambda m: get_act('売上高',m=m)-get_act('仕入高',m=m),
-                lambda m: get_bud('売上高',m=m)-get_bud('仕入高',m=m), is_total=True)
-            add('販売管理費', lambda m: 0, lambda m: 0, is_section=True)
-            for acc in exp_accs:
-                add(acc, lambda m,a=acc: get_act('費用',acc=a,m=m),
-                    lambda m,a=acc: get_bud('費用',acc=a,m=m), indent=True)
-            add('費用合計', lambda m: get_act('費用',m=m), lambda m: get_bud('費用',m=m), is_total=True)
-            add('営業利益', lambda m: get_act('売上高',m=m)-get_act('仕入高',m=m)-get_act('費用',m=m),
-                lambda m: get_bud('売上高',m=m)-get_bud('仕入高',m=m)-get_bud('費用',m=m), is_total=True)
-            return rows
-
-        pl_rows = build_pl_rows()
-
-        @st.dialog('🔍 仕訳明細', width='large')
-        def show_detail_dialog(acc, target_month, dept_data):
-            st.write(f'**{acc}　{target_month if target_month != "累計" else "累計（全期間）"}**')
-            dd = dept_data[dept_data['account']==acc].copy()
-            if target_month != '累計':
-                target_m = next((m for m,ml in zip(months,month_labels_all) if ml==target_month), None)
-                if target_m: dd = dd[dd['month']==target_m]
-            dd = dd[['date','month','dept','partner','note','amount']].sort_values('date')
-            dd.columns = ['日付','月','部門','取引先','摘要','金額']
-            total = dd['金額'].sum()
-            dd['金額'] = dd['金額'].apply(fmt)
-            st.caption(f'{len(dd)}件　合計：{fmt(total)}')
-            st.dataframe(dd, use_container_width=True, hide_index=True)
-
-        if 'dialog_acc' not in st.session_state:
-            st.session_state.dialog_acc = None
-            st.session_state.dialog_month = None
-
-        st.write('##### 金額をクリックすると明細ウィンドウが開きます')
-        header_cols = st.columns([3] + [1]*len(month_labels) + [1.2])
-        header_cols[0].write('**項目**')
-        for i, ml in enumerate(month_labels): header_cols[i+1].write(f'**{ml}**')
-        header_cols[-1].write('**累計**')
-
-        for row_idx, r in enumerate(pl_rows):
-            if r['is_section']:
-                st.markdown(f"**━━ {r['項目']} ━━**")
-                continue
-            cols = st.columns([3] + [1]*len(month_labels) + [1.2])
-            cols[0].write(r['項目'])
-            is_clickable = not r['is_total']
-            for i, (ml, act_v) in enumerate(zip(month_labels, r['vals_act'])):
-                if is_clickable and act_v != '¥0':
-                    if cols[i+1].button(act_v, key=f'btn_{row_idx}_{i}', use_container_width=True):
-                        st.session_state.dialog_acc = r['項目'].strip()
-                        st.session_state.dialog_month = ml
-                else:
-                    cols[i+1].write(act_v)
-            cum_v = r['vals_act'][-1]
-            if is_clickable and cum_v != '¥0':
-                if cols[-1].button(cum_v, key=f'btn_{row_idx}_cum', use_container_width=True):
-                    st.session_state.dialog_acc = r['項目'].strip()
-                    st.session_state.dialog_month = '累計'
-            else:
-                cols[-1].write(cum_v)
-
-        if st.session_state.dialog_acc:
-            show_detail_dialog(st.session_state.dialog_acc, st.session_state.dialog_month, d)
-            st.session_state.dialog_acc = None
-            st.session_state.dialog_month = None
-
-        if has_bud:
-            st.divider()
-            st.write('**予実比較（実績 / 予算 差額）**')
-            comp_rows = []
-            for r in pl_rows:
-                if r['is_section']:
-                    comp_rows.append({col: ('━━ '+r['項目']+' ━━' if col=='項目' else '')
-                                      for col in ['項目']+month_labels+['累計']})
-                    continue
-                row_d = {'項目': r['項目']}
-                for i, ml in enumerate(month_labels):
-                    row_d[ml] = f"{r['vals_act'][i]} / {r['vals_bud'][i]} {r['vals_diff'][i]}"
-                row_d['累計'] = f"{r['vals_act'][-1]} / {r['vals_bud'][-1]} {r['vals_diff'][-1]}"
-                comp_rows.append(row_d)
-            st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
-
-    with tab3:
-        d = df.copy()
-        if sel_dept != '全体': d = d[d['dept']==sel_dept]
-        chart_data = []
-        for m in months:
-            md = d[d['month']==m]
-            s = md[md['type']=='売上高']['amount'].sum()
-            c = md[md['type']=='仕入高']['amount'].sum()
-            e = md[md['type']=='費用']['amount'].sum()
-            row = {'月': m[5:]+'月', '売上高（実績）': s, '売上総利益': s-c, '営業利益（実績）': s-c-e}
             if has_bud:
-                bd2 = bdf.copy()
-                if sel_dept != '全体': bd2 = bd2[bd2['dept']==sel_dept]
-                bm = bd2[bd2['month']==m]
-                bs = bm[bm['type']=='売上高']['amount'].sum()
-                bc = bm[bm['type']=='仕入高']['amount'].sum()
-                be = bm[bm['type']=='費用']['amount'].sum()
-                row['売上高（予算）'] = bs
-                row['営業利益（予算）'] = bs-bc-be
-            chart_data.append(row)
-        chart_df = pd.DataFrame(chart_data).set_index('月')
-        cols_show = ['売上高（実績）','売上総利益','営業利益（実績）']
-        if has_bud: cols_show += ['売上高（予算）','営業利益（予算）']
-        st.bar_chart(chart_df[cols_show])
+                bd = bdf.copy()
+                if sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
+                if sel_month != '累計': bd = bd[bd['month']==sel_month]
+                bexp = bd[bd['type']=='費用'].groupby('account')['amount'].sum().reset_index()
+                bexp.columns = ['勘定科目','予算']
+                act_nums = exp_df.set_index('勘定科目')['実績'].to_dict()
+                exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
+                exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
+                exp_df['差額'] = ["▲ "+fmt(abs(dv)) if b!=0 and dv>=0 else "▼ "+fmt(abs(dv)) if b!=0 else ""
+                                  for dv,b in zip(
+                                      [float(act_nums.get(k,0))-float(bv) for k,bv in zip(exp_df['勘定科目'],exp_df['予算'])],
+                                      exp_df['予算'])]
+                exp_df['予算'] = exp_df['予算'].apply(fmt)
+
+            exp_df['実績'] = exp_df['実績'].apply(fmt)
+
+            st.write('##### 科目をクリックすると明細を表示します')
+            sel_row = st.dataframe(exp_df, use_container_width=True, hide_index=True,
+                                   on_select='rerun', selection_mode='single-row')
+
+            if sel_row and sel_row.selection and sel_row.selection.rows:
+                selected_acc = exp_df.iloc[sel_row.selection.rows[0]]['勘定科目']
+                st.subheader(f'🔍 明細：{selected_acc}')
+                det = d[d['account']==selected_acc][['date','dept','partner','note','amount']].copy()
+                det = det.sort_values('date')
+                det.columns = ['日付','部門','取引先','摘要','金額']
+                det['金額'] = det['金額'].apply(fmt)
+                st.dataframe(det, use_container_width=True, hide_index=True)
+                st.caption(f'{len(det)}件')
+
+        with tab2:
+            d = df.copy()
+            if sel_dept != '全体': d = d[d['dept']==sel_dept]
+            bd = bdf.copy() if has_bud else None
+            if has_bud and sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
+
+            month_labels_all = [m[5:]+'月' for m in months]
+            sel_months_filter = st.multiselect('月を絞り込む（複数選択可）', month_labels_all,
+                                               default=month_labels_all, key='tab2_months')
+            filtered_months = [m for m, ml in zip(months, month_labels_all) if ml in sel_months_filter]
+            month_labels = [m[5:]+'月' for m in filtered_months]
+
+            def get_act(type_, acc=None, m=None):
+                dd = d[d['month']==m] if m else d
+                dd = dd[dd['type']==type_]
+                if acc: dd = dd[dd['account']==acc]
+                return dd['amount'].sum()
+
+            def get_bud(type_, acc=None, m=None):
+                if not has_bud: return 0
+                bb = bd[bd['month']==m] if m else bd
+                bb = bb[bb['type']==type_]
+                if acc: bb = bb[bb['account']==acc]
+                return bb['amount'].sum()
+
+            exp_accs = sorted(set(
+                d[d['type']=='費用']['account'].unique().tolist() +
+                (bd[bd['type']=='費用']['account'].unique().tolist() if has_bud else [])
+            ))
+
+            def build_pl_rows():
+                rows = []
+                def add(label, act_fn, bud_fn, indent=False, is_total=False, is_section=False):
+                    act_m = [act_fn(m) for m in filtered_months]
+                    act_t = sum(act_m)
+                    bud_m = [bud_fn(m) for m in filtered_months]
+                    bud_t = sum(bud_m)
+                    vals_act = [fmt(v) for v in act_m] + [fmt(act_t)]
+                    vals_bud = [fmt(v) for v in bud_m] + [fmt(bud_t)]
+                    vals_diff = ["▲ "+fmt(abs(a-b)) if b!=0 and a-b>=0 else "▼ "+fmt(abs(a-b)) if b!=0 else ""
+                                 for a,b in zip(act_m+[act_t], bud_m+[bud_t])]
+                    rows.append({'項目': ('　' if indent else '') + label,
+                                 'vals_act': vals_act, 'vals_bud': vals_bud, 'vals_diff': vals_diff,
+                                 'is_section': is_section, 'is_total': is_total})
+                add('売上高', lambda m: get_act('売上高',m=m), lambda m: get_bud('売上高',m=m))
+                add('売上原価（仕入高）', lambda m: get_act('仕入高',m=m), lambda m: get_bud('仕入高',m=m))
+                add('売上総利益', lambda m: get_act('売上高',m=m)-get_act('仕入高',m=m),
+                    lambda m: get_bud('売上高',m=m)-get_bud('仕入高',m=m), is_total=True)
+                add('販売管理費', lambda m: 0, lambda m: 0, is_section=True)
+                for acc in exp_accs:
+                    add(acc, lambda m,a=acc: get_act('費用',acc=a,m=m),
+                        lambda m,a=acc: get_bud('費用',acc=a,m=m), indent=True)
+                add('費用合計', lambda m: get_act('費用',m=m), lambda m: get_bud('費用',m=m), is_total=True)
+                add('営業利益', lambda m: get_act('売上高',m=m)-get_act('仕入高',m=m)-get_act('費用',m=m),
+                    lambda m: get_bud('売上高',m=m)-get_bud('仕入高',m=m)-get_bud('費用',m=m), is_total=True)
+                return rows
+
+            pl_rows = build_pl_rows()
+
+            @st.dialog('🔍 仕訳明細', width='large')
+            def show_detail_dialog(acc, target_month, dept_data):
+                st.write(f'**{acc}　{target_month if target_month != "累計" else "累計（全期間）"}**')
+                dd = dept_data[dept_data['account']==acc].copy()
+                if target_month != '累計':
+                    target_m = next((m for m,ml in zip(months,month_labels_all) if ml==target_month), None)
+                    if target_m: dd = dd[dd['month']==target_m]
+                dd = dd[['date','month','dept','partner','note','amount']].sort_values('date')
+                dd.columns = ['日付','月','部門','取引先','摘要','金額']
+                total = dd['金額'].sum()
+                dd['金額'] = dd['金額'].apply(fmt)
+                st.caption(f'{len(dd)}件　合計：{fmt(total)}')
+                st.dataframe(dd, use_container_width=True, hide_index=True)
+
+            if 'dialog_acc' not in st.session_state:
+                st.session_state.dialog_acc = None
+                st.session_state.dialog_month = None
+
+            st.write('##### 金額をクリックすると明細ウィンドウが開きます')
+            header_cols = st.columns([3] + [1]*len(month_labels) + [1.2])
+            header_cols[0].write('**項目**')
+            for i, ml in enumerate(month_labels): header_cols[i+1].write(f'**{ml}**')
+            header_cols[-1].write('**累計**')
+
+            for row_idx, r in enumerate(pl_rows):
+                if r['is_section']:
+                    st.markdown(f"**━━ {r['項目']} ━━**")
+                    continue
+                cols = st.columns([3] + [1]*len(month_labels) + [1.2])
+                cols[0].write(r['項目'])
+                is_clickable = not r['is_total']
+                for i, (ml, act_v) in enumerate(zip(month_labels, r['vals_act'])):
+                    if is_clickable and act_v != '¥0':
+                        if cols[i+1].button(act_v, key=f'btn_{row_idx}_{i}', use_container_width=True):
+                            st.session_state.dialog_acc = r['項目'].strip()
+                            st.session_state.dialog_month = ml
+                    else:
+                        cols[i+1].write(act_v)
+                cum_v = r['vals_act'][-1]
+                if is_clickable and cum_v != '¥0':
+                    if cols[-1].button(cum_v, key=f'btn_{row_idx}_cum', use_container_width=True):
+                        st.session_state.dialog_acc = r['項目'].strip()
+                        st.session_state.dialog_month = '累計'
+                else:
+                    cols[-1].write(cum_v)
+
+            if st.session_state.dialog_acc:
+                show_detail_dialog(st.session_state.dialog_acc, st.session_state.dialog_month, d)
+                st.session_state.dialog_acc = None
+                st.session_state.dialog_month = None
+
+            if has_bud:
+                st.divider()
+                st.write('**予実比較（実績 / 予算 差額）**')
+                comp_rows = []
+                for r in pl_rows:
+                    if r['is_section']:
+                        comp_rows.append({col: ('━━ '+r['項目']+' ━━' if col=='項目' else '')
+                                          for col in ['項目']+month_labels+['累計']})
+                        continue
+                    row_d = {'項目': r['項目']}
+                    for i, ml in enumerate(month_labels):
+                        row_d[ml] = f"{r['vals_act'][i]} / {r['vals_bud'][i]} {r['vals_diff'][i]}"
+                    row_d['累計'] = f"{r['vals_act'][-1]} / {r['vals_bud'][-1]} {r['vals_diff'][-1]}"
+                    comp_rows.append(row_d)
+                st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+
+        with tab3:
+            d = df.copy()
+            if sel_dept != '全体': d = d[d['dept']==sel_dept]
+            chart_data = []
+            for m in months:
+                md = d[d['month']==m]
+                s = md[md['type']=='売上高']['amount'].sum()
+                c = md[md['type']=='仕入高']['amount'].sum()
+                e = md[md['type']=='費用']['amount'].sum()
+                row = {'月': m[5:]+'月', '売上高（実績）': s, '売上総利益': s-c, '営業利益（実績）': s-c-e}
+                if has_bud:
+                    bd2 = bdf.copy()
+                    if sel_dept != '全体': bd2 = bd2[bd2['dept']==sel_dept]
+                    bm = bd2[bd2['month']==m]
+                    bs = bm[bm['type']=='売上高']['amount'].sum()
+                    bc = bm[bm['type']=='仕入高']['amount'].sum()
+                    be = bm[bm['type']=='費用']['amount'].sum()
+                    row['売上高（予算）'] = bs
+                    row['営業利益（予算）'] = bs-bc-be
+                chart_data.append(row)
+            chart_df = pd.DataFrame(chart_data).set_index('月')
+            cols_show = ['売上高（実績）','売上総利益','営業利益（実績）']
+            if has_bud: cols_show += ['売上高（予算）','営業利益（予算）']
+            st.bar_chart(chart_df[cols_show])
 
 with tab_settings:
     st.subheader('⚙️ 会社管理')
