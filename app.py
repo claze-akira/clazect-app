@@ -199,13 +199,13 @@ def pct(a, b):
 
 def diff_str(act, bud):
     try:
-        act = float(act) if act is not None else 0.0
-        bud = float(bud) if bud is not None else 0.0
-    except:
-        return ''
-    if bud == 0: return ''
-    d = act - bud
-    arrow = '▲' if d >= 0 else '▼'
+        a = float(act) if act is not None else 0.0
+        b = float(bud) if bud is not None else 0.0
+    except (ValueError, TypeError):
+        return ""
+    if b == 0: return ""
+    d = a - b
+    arrow = "▲" if d >= 0 else "▼"
     return f"{arrow} {fmt(abs(d))}"
 
 # ===== UI =====
