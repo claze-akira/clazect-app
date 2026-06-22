@@ -330,6 +330,10 @@ with tab1:
     exp_df.columns = ['勘定科目', '実績']
     exp_df = exp_df[exp_df['実績']>0].sort_values('実績', ascending=False)
 
+    # 実績を数値で確保してから計算
+    exp_df['実績'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
+    exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
+
     if has_bud:
         bd = bdf.copy()
         if sel_dept != '全体': bd = bd[bd['dept']==sel_dept]
@@ -338,12 +342,8 @@ with tab1:
         bexp.columns = ['勘定科目','予算']
         exp_df = exp_df.merge(bexp, on='勘定科目', how='left').fillna(0)
         exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
-        exp_df['実績'] = pd.to_numeric(exp_df['実績'], errors='coerce').fillna(0)
-        exp_df['差額'] = exp_df.apply(lambda r: diff_str(r['実績'], r['予算']), axis=1)
-        exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
+        exp_df['差額'] = exp_df.apply(lambda r: diff_str(float(r['実績']), float(r['予算'])), axis=1)
         exp_df['予算'] = exp_df['予算'].apply(fmt)
-    else:
-        exp_df['構成比'] = exp_df['実績'].apply(lambda x: pct(x, agg['expense']))
 
     exp_df['実績'] = exp_df['実績'].apply(fmt)
 
