@@ -346,7 +346,7 @@ with tab1:
         exp_df['予算'] = pd.to_numeric(exp_df['予算'], errors='coerce').fillna(0)
         exp_df["実績_v"] = exp_df["勘定科目"].map(act_nums).fillna(0).astype(float)
         exp_df["差額_d"] = exp_df["実績_v"] - exp_df["予算"]
-        exp_df["差額"] = exp_df.apply(lambda r: ("▲ " if r["差額_d"]>=0 else "▼ ") + fmt(abs(r["差額_d"])) if r["予算"]!=0 else "", axis=1)
+        exp_df["差額"] = ["▲ "+fmt(abs(d)) if b!=0 and d>=0 else "▼ "+fmt(abs(d)) if b!=0 else "" for d,b in zip(exp_df["差額_d"], exp_df["予算"])]
         exp_df = exp_df.drop(columns=["実績_v","差額_d"])
 
     exp_df['実績'] = exp_df['実績'].apply(fmt)
