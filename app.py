@@ -21,7 +21,13 @@ COGS_KW = ['仕入高', '売上原価']
 # ===== Google Sheets接続 =====
 @st.cache_resource
 def get_gsheet_client():
-    creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
+    # Streamlit Cloud上はSecretsから、ローカルはcredentials.jsonから読込
+    try:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=SCOPES
+        )
+    except:
+        creds = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
     return gspread.authorize(creds)
 
 def get_spreadsheet():
