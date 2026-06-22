@@ -590,9 +590,14 @@ with tab_main:
                 ws.row_dimensions[2].height = 16
 
                 # ヘッダー行
-                header = ['項目'] + month_labels + ['累計']
+                # ヘッダー：月ごとに実績・予算を並べる
+                header = ['項目']
+                for ml in month_labels:
+                    header.append(f'{ml} 実績')
+                    if has_bud: header.append(f'{ml} 予算')
+                header.append('累計 実績')
                 if has_bud:
-                    header += ['予算（累計）', '差額']
+                    header += ['累計 予算', '累計 差額']
                 for col, h in enumerate(header, 1):
                     c = ws.cell(row=3, column=col)
                     c.value = h
@@ -608,8 +613,9 @@ with tab_main:
                         ws.cell(row=row, column=1).value = '◆ ' + r['項目']
                         ws.cell(row=row, column=1).font = SECT_FONT
                         ws.cell(row=row, column=1).fill = SECT_FILL
-                        for col in range(2, len(header)+1):
-                            ws.cell(row=row, column=col).fill = SECT_FILL
+                        total_cols = 1 + len(month_labels) * (2 if has_bud else 1) + (3 if has_bud else 1)
+                        for c_idx in range(2, total_cols+1):
+                            ws.cell(row=row, column=c_idx).fill = SECT_FILL
                         ws.row_dimensions[row].height = 18
                         row += 1
                         continue
@@ -621,53 +627,60 @@ with tab_main:
                     ws.cell(row=row, column=1).font = font
                     if fill: ws.cell(row=row, column=1).fill = fill
 
-                    # 月別実績（数値で入れる）
-                    for i, ml in enumerate(month_labels):
-                        val_str = r['vals_act'][i].replace('¥','').replace(',','').replace('-','')
+                    def parse_val(s):
                         try:
-                            val = int(r['vals_act'][i].replace('¥','').replace(',','').replace('▲','').replace('▼',''))
-                            if '-' in r['vals_act'][i] or r['vals_act'][i].startswith('▼'): val = -val
-                        except: val = 0
-                        c = ws.cell(row=row, column=i+2)
-                        c.value = val
+                            v = int(str(s).replace('¥','').replace(',','').replace('▲','').replace('▼','').strip())
+                            if '-' in str(s) or str(s).startswith('▼'): v = -v
+                            return v
+                        except: return 0
+
+                    # 月別：実績・予算を交互に配置
+                    col = 2
+                    for i, ml in enumerate(month_labels):
+                        act_v = parse_val(r['vals_act'][i])
+                        c = ws.cell(row=row, column=col)
+                        c.value = act_v
                         c.number_format = '#,##0'
-                        c.font = NEG_FONT if val < 0 else font
+                        c.font = NEG_FONT if act_v < 0 else font
                         c.alignment = Alignment(horizontal='right')
                         if fill: c.fill = fill
+                        col += 1
+                        if has_bud:
+                            bud_v = parse_val(r['vals_bud'][i])
+                            cb = ws.cell(row=row, column=col)
+                            cb.value = bud_v
+                            cb.number_format = '#,##0'
+                            cb.font = Font(name='Arial', size=10, color='888888')
+                            cb.alignment = Alignment(horizontal='right')
+                            if fill: cb.fill = fill
+                            col += 1
 
-                    # 累計
-                    try:
-                        cum = int(r['vals_act'][-1].replace('¥','').replace(',',''))
-                        if '-' in r['vals_act'][-1]: cum = -cum
-                    except: cum = 0
-                    cum_col = len(month_labels) + 2
-                    c = ws.cell(row=row, column=cum_col)
+                    # 累計：実績・予算・差額
+                    cum = parse_val(r['vals_act'][-1])
+                    c = ws.cell(row=row, column=col)
                     c.value = cum
                     c.number_format = '#,##0'
                     c.font = NEG_FONT if cum < 0 else font
                     c.alignment = Alignment(horizontal='right')
                     if fill: c.fill = fill
+                    col += 1
 
-                    # 予算・差額
                     if has_bud:
-                        try:
-                            bud_v = int(r['vals_bud'][-1].replace('¥','').replace(',',''))
-                            if '-' in r['vals_bud'][-1]: bud_v = -bud_v
-                        except: bud_v = 0
-                        try:
-                            diff_v = cum - bud_v
-                        except: diff_v = 0
-                        c_bud = ws.cell(row=row, column=cum_col+1)
-                        c_bud.value = bud_v
-                        c_bud.number_format = '#,##0'
-                        c_bud.alignment = Alignment(horizontal='right')
-                        if fill: c_bud.fill = fill
-                        c_diff = ws.cell(row=row, column=cum_col+2)
-                        c_diff.value = diff_v
-                        c_diff.number_format = '#,##0'
-                        c_diff.font = NEG_FONT if diff_v < 0 else Font(name='Arial', size=10, color='3B6D11')
-                        c_diff.alignment = Alignment(horizontal='right')
-                        if fill: c_diff.fill = fill
+                        bud_cum = parse_val(r['vals_bud'][-1])
+                        diff_v = cum - bud_cum
+                        cb = ws.cell(row=row, column=col)
+                        cb.value = bud_cum
+                        cb.number_format = '#,##0'
+                        cb.font = Font(name='Arial', size=10, color='888888')
+                        cb.alignment = Alignment(horizontal='right')
+                        if fill: cb.fill = fill
+                        col += 1
+                        cd = ws.cell(row=row, column=col)
+                        cd.value = diff_v
+                        cd.number_format = '#,##0'
+                        cd.font = NEG_FONT if diff_v < 0 else Font(name='Arial', size=10, color='3B6D11')
+                        cd.alignment = Alignment(horizontal='right')
+                        if fill: cd.fill = fill
 
                     ws.row_dimensions[row].height = 18
                     row += 1
