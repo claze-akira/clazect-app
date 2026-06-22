@@ -442,26 +442,36 @@ with tab2:
 
     act_df = pd.DataFrame(final_rows)
 
-    # 行選択で明細表示
-    st.write('##### 行をクリックすると明細を表示します')
+    # ダイアログ定義（明細ポップアップ）
+    @st.dialog('🔍 仕訳明細', width='large')
+    def show_detail_dialog(acc, sel_months, dept_data):
+        # 月フィルター
+        month_opts = ['全期間'] + months
+        sel_m_dialog = st.selectbox('月を絞り込む', month_opts, key='dialog_month')
+        dd = dept_data[dept_data['account']==acc].copy()
+        if sel_m_dialog != '全期間':
+            dd = dd[dd['month']==sel_m_dialog]
+        dd = dd[['date','month','dept','partner','note','amount']].sort_values('date')
+        dd.columns = ['日付','月','部門','取引先','摘要','金額']
+        dd['金額'] = dd['金額'].apply(fmt)
+        total = dept_data[dept_data['account']==acc]['amount'].sum()
+        if sel_m_dialog != '全期間':
+            total = dept_data[(dept_data['account']==acc)&(dept_data['month']==sel_m_dialog)]['amount'].sum()
+        st.caption(f'{len(dd)}件　合計：{fmt(total)}')
+        st.dataframe(dd, use_container_width=True, hide_index=True)
+
+    # 行選択で明細ダイアログ表示
+    st.write('##### 費用科目の行をクリックすると明細ウィンドウが開きます')
     sel_pl = st.dataframe(act_df, use_container_width=True, hide_index=True,
                           on_select='rerun', selection_mode='single-row')
 
     if sel_pl and sel_pl.selection and sel_pl.selection.rows:
         idx = sel_pl.selection.rows[0]
         selected_label = final_rows[idx]['項目'].strip()
-        # 対応するpl_rowsのエントリを探す
         pr = next((r for r in pl_rows if r['項目'].strip() == selected_label or
-                   ('　'+selected_label) == r['項目'] or selected_label == r['項目'].strip()), None)
+                   selected_label == r['項目'].strip()), None)
         if pr and not pr['is_section'] and not pr['is_total']:
-            acc = selected_label
-            st.subheader(f'🔍 明細：{acc}')
-            det = d[d['account']==acc][['date','dept','partner','note','amount']].copy()
-            det = det.sort_values('date')
-            det.columns = ['日付','部門','取引先','摘要','金額']
-            det['金額'] = det['金額'].apply(fmt)
-            st.dataframe(det, use_container_width=True, hide_index=True)
-            st.caption(f'{len(det)}件')
+            show_detail_dialog(selected_label, months, d)
 
     # 予実比較テーブル
     if has_bud:
