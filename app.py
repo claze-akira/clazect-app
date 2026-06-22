@@ -329,6 +329,9 @@ df  = load_data(sel_company)
 bdf = load_budget(sel_company)
 has_bud = bdf is not None and not bdf.empty
 
+# デバッグ用（確認後に削除）
+st.sidebar.caption(f'読込中: {sel_company}_実績データ / {len(df) if df is not None else 0}件')
+
 # ===== タブ =====
 tab_main, tab_settings = st.tabs(['📊 分析', '⚙️ 設定'])
 
