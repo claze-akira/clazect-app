@@ -273,9 +273,20 @@ with col_title:
 with col_company:
     if companies:
         sel_company = st.selectbox('会社', companies, label_visibility='collapsed')
+        # 会社切替時にアップローダーをリセット
+        if 'prev_company' not in st.session_state:
+            st.session_state.prev_company = sel_company
+        if st.session_state.prev_company != sel_company:
+            st.session_state.prev_company = sel_company
+            # アップローダーのキーを変更してリセット
+            st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+            st.cache_data.clear()
+            st.rerun()
     else:
         sel_company = None
         st.warning('設定タブから会社を登録してください')
+
+uploader_key = st.session_state.get('uploader_key', 0)
 
 # ===== サイドバー =====
 with st.sidebar:
@@ -285,7 +296,7 @@ with st.sidebar:
 
     st.subheader('実績（仕訳帳CSV）')
     st.caption('freee・MFクラウド どちらも対応')
-    jn_file = st.file_uploader('仕訳帳CSV', type='csv', key='jn')
+    jn_file = st.file_uploader('仕訳帳CSV', type='csv', key=f'jn_{uploader_key}')
     if jn_file and sel_company:
         with st.spinner('取込中...'):
             df_new, err = parse_csv(jn_file)
@@ -304,7 +315,7 @@ with st.sidebar:
 
     st.divider()
     st.subheader('予算（xlsx）')
-    bud_file = st.file_uploader('予算入力テンプレート xlsx', type=['xlsx','xls'], key='bud')
+    bud_file = st.file_uploader('予算入力テンプレート xlsx', type=['xlsx','xls'], key=f'bud_{uploader_key}')
     if bud_file and sel_company:
         with st.spinner('取込中...'):
             bdf_new, err = parse_budget_xlsx(bud_file)
@@ -329,8 +340,6 @@ df  = load_data(sel_company)
 bdf = load_budget(sel_company)
 has_bud = bdf is not None and not bdf.empty
 
-# デバッグ用（確認後に削除）
-st.sidebar.caption(f'読込中: {sel_company}_実績データ / {len(df) if df is not None else 0}件')
 
 # ===== タブ =====
 tab_main, tab_settings = st.tabs(['📊 分析', '⚙️ 設定'])
